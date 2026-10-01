@@ -1,36 +1,87 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# District Location Mapper
 
-## Getting Started
+Vercel-ready Next.js application for district-wise image map location pinning and management.
 
-First, run the development server:
+## Stack
+
+- Next.js (App Router) + TypeScript
+- Tailwind CSS + shadcn/ui
+- **MongoDB** via Mongoose (MongoDB Atlas recommended)
+- Zod validation
+- Custom image-map interaction layer (zoom, pan, click, drag)
+
+## Quick start
 
 ```bash
+cp .env.example .env
+npm install
+npm run db:seed
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+By default the app uses **local JSON data** in `data/db.json` (no MongoDB required).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Open [http://localhost:3000](http://localhost:3000).
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### Switch to MongoDB later
 
-## Learn More
+1. Set in `.env`:
 
-To learn more about Next.js, take a look at the following resources:
+```env
+DATA_PROVIDER=mongodb
+MONGODB_URI="mongodb+srv://..."
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+2. MongoDB wiring is already prepared via Mongoose models under `src/models/`.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Scripts
 
-## Deploy on Vercel
+| Script | Purpose |
+| --- | --- |
+| `npm run dev` | Local development |
+| `npm run build` | Production build |
+| `npm run start` | Start production server |
+| `npm run lint` | ESLint |
+| `npm run typecheck` | TypeScript check |
+| `npm test` | Vitest tests |
+| `npm run db:seed` | Seed districts, categories, sample pins |
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Database collections
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- `districts` — district map metadata (`mapImage`, width/height, status)
+- `categories` — location categories
+- `locations` — pins with required `pixelX`/`pixelY` and optional lat/lng
+
+## Map engine
+
+Interactive district maps use [Leaflet](https://leafletjs.com/) with `L.CRS.Simple` + `L.imageOverlay` so your exact district PNG/JPG is rendered (not OpenStreetMap tiles).
+
+- **Blue markers** = tourism points (solid blue circles)
+- **Red markers** = mandal headquarters (white circle + red ring + center dot)
+- Click a point → Leaflet popup with latitude / longitude fields
+- Zoom / pan via Leaflet controls
+
+Coordinate conversion:
+
+- Image pixel `(x, y)` top-left origin
+- Leaflet CRS.Simple: `lat = height - y`, `lng = x`
+
+## Vercel deployment
+
+1. Push to GitHub.
+2. Import in Vercel.
+3. Add env var: `MONGODB_URI`
+4. Deploy.
+5. Run seed once against production:
+
+```bash
+MONGODB_URI="..." npm run db:seed
+```
+
+No Docker, Express, Nginx, or VPS required.
+
+## Coordinate model
+
+- Clicks store **pixelX / pixelY** relative to the original map image.
+- Latitude / longitude stay `null` until calibration is configured.
+- Conversion lives in `src/lib/coordinates/coordinateMapper.ts`.
