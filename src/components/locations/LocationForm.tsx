@@ -29,6 +29,7 @@ export interface LocationFormValues {
   address: string;
   description: string;
   pointType: PointType;
+  markerColor: string;
   status: EntityStatus;
 }
 
@@ -240,6 +241,7 @@ export function locationToFormValues(location: Location): LocationFormValues {
     address: location.address ?? "",
     description: location.description ?? "",
     pointType: location.pointType ?? "CUSTOM",
+    markerColor: location.markerColor ?? "#f59e0b",
     status: location.status,
   };
 }

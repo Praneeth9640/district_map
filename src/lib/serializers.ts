@@ -38,6 +38,7 @@ type LeanLocation = {
   address?: string | null;
   description?: string | null;
   pointType?: "RED" | "BLUE" | "CUSTOM";
+  markerColor?: string | null;
   status: EntityStatus;
   createdAt: Date;
   updatedAt: Date;
@@ -126,6 +127,7 @@ export function serializeLocation(location: LeanLocation) {
     address: location.address ?? null,
     description: location.description ?? null,
     pointType: location.pointType ?? "CUSTOM",
+    markerColor: location.markerColor ?? null,
     status: location.status,
     createdAt: new Date(location.createdAt).toISOString(),
     updatedAt: new Date(location.updatedAt).toISOString(),

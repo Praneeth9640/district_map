@@ -2,7 +2,6 @@
 
 import { useEffect, useRef } from "react";
 import type { LeafletDistrictMapProps } from "@/components/map/LeafletDistrictMap";
-import type { LocationFormValues } from "@/components/locations/LocationForm";
 import type { MapMarkerData } from "@/types";
 
 type EmbedOutbound =
@@ -14,10 +13,7 @@ type EmbedOutbound =
       latitude: number;
       longitude: number;
       marker: MapMarkerData;
-    }
-  | { type: "district-map:form-change"; values: LocationFormValues }
-  | { type: "district-map:form-save" }
-  | { type: "district-map:form-cancel" };
+    };
 
 /**
  * Renders the Leaflet district map inside a same-origin iframe so page
@@ -37,9 +33,6 @@ export function DistrictMap(props: LeafletDistrictMapProps) {
       onMapClick: _c,
       onMarkerSelect: _s,
       onMarkerDrag: _d,
-      onFormChange: _fc,
-      onFormSave: _fs,
-      onFormCancel: _fx,
       ...serializable
     } = propsRef.current;
     frame.postMessage(
@@ -72,15 +65,6 @@ export function DistrictMap(props: LeafletDistrictMapProps) {
             event.data.marker,
           );
           break;
-        case "district-map:form-change":
-          current.onFormChange?.(event.data.values);
-          break;
-        case "district-map:form-save":
-          current.onFormSave?.();
-          break;
-        case "district-map:form-cancel":
-          current.onFormCancel?.();
-          break;
         default:
           break;
       }
@@ -101,9 +85,6 @@ export function DistrictMap(props: LeafletDistrictMapProps) {
     props.markers,
     props.selectedMarkerId,
     props.focusLatLng,
-    props.formValues,
-    props.categories,
-    props.saving,
   ]);
 
   return (
@@ -113,7 +94,6 @@ export function DistrictMap(props: LeafletDistrictMapProps) {
       src="/embed/map"
       className="h-[420px] w-full rounded-lg border-0 bg-stone-100 sm:h-[560px] lg:h-[640px]"
       onLoad={() => {
-        // ready message may arrive before or after load; nudge a resync
         if (readyRef.current) pushProps();
       }}
     />

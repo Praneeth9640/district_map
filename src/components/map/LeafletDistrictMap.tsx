@@ -1,14 +1,11 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { createRoot, type Root } from "react-dom/client";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { MapPointPopup } from "@/components/map/MapPointPopup";
-import type { LocationFormValues } from "@/components/locations/LocationForm";
 import { resolveDistrictView } from "@/lib/maps/districtViews";
 import type { DistrictMapView } from "@/lib/maps/types";
-import type { Category, MapMarkerData, PointType } from "@/types";
+import type { MapMarkerData, PointType } from "@/types";
 
 export interface LeafletDistrictMapProps {
   districtCode: string;
@@ -17,35 +14,35 @@ export interface LeafletDistrictMapProps {
   markers: MapMarkerData[];
   selectedMarkerId?: string | null;
   focusLatLng?: { latitude: number; longitude: number } | null;
-  formValues?: LocationFormValues | null;
-  categories: Category[];
-  saving?: boolean;
   onMapClick: (latitude: number, longitude: number) => void;
   onMarkerSelect: (marker: MapMarkerData) => void;
   onMarkerDrag: (latitude: number, longitude: number, marker: MapMarkerData) => void;
-  onFormChange?: (values: LocationFormValues) => void;
-  onFormSave?: () => void;
-  onFormCancel?: () => void;
+}
+
+function normalizeHexColor(value?: string | null): string {
+  if (!value) return "#f59e0b";
+  const trimmed = value.trim();
+  if (/^#([0-9a-fA-F]{6})$/.test(trimmed)) return trimmed;
+  if (/^#([0-9a-fA-F]{3})$/.test(trimmed)) {
+    const [, r, g, b] = trimmed;
+    return `#${r}${r}${g}${g}${b}${b}`;
+  }
+  return "#f59e0b";
 }
 
 function createPointIcon(
   pointType: PointType | undefined,
   selected: boolean,
   temporary?: boolean,
+  markerColor?: string | null,
 ) {
-  if (temporary) {
-    return L.divIcon({
-      className: "district-map-marker",
-      html: `<span class="dm-dot dm-dot-temp${selected ? " is-selected" : ""}"></span>`,
-      iconSize: [18, 18],
-      iconAnchor: [9, 9],
-    });
-  }
+  const selectedClass = selected ? " is-selected" : "";
+  const tempClass = temporary ? " is-temp" : "";
 
   if (pointType === "BLUE") {
     return L.divIcon({
       className: "district-map-marker",
-      html: `<span class="dm-dot dm-dot-blue${selected ? " is-selected" : ""}" title="Tourism"></span>`,
+      html: `<span class="dm-dot dm-dot-blue${selectedClass}${tempClass}" title="Tourism"></span>`,
       iconSize: [18, 18],
       iconAnchor: [9, 9],
     });
@@ -54,17 +51,18 @@ function createPointIcon(
   if (pointType === "RED") {
     return L.divIcon({
       className: "district-map-marker",
-      html: `<span class="dm-dot dm-dot-red${selected ? " is-selected" : ""}" title="Mandal Headquarter"><span class="dm-dot-core"></span></span>`,
+      html: `<span class="dm-dot dm-dot-red${selectedClass}${tempClass}" title="Mandal Headquarter"><span class="dm-dot-core"></span></span>`,
       iconSize: [20, 20],
       iconAnchor: [10, 10],
     });
   }
 
+  const color = normalizeHexColor(markerColor);
   return L.divIcon({
     className: "district-map-marker",
-    html: `<span class="dm-dot dm-dot-custom${selected ? " is-selected" : ""}"></span>`,
-    iconSize: [16, 16],
-    iconAnchor: [8, 8],
+    html: `<span class="dm-dot dm-dot-custom${selectedClass}${tempClass}" style="--dm-color:${color};background:${color}" title="Custom"></span>`,
+    iconSize: [18, 18],
+    iconAnchor: [9, 9],
   });
 }
 
@@ -80,6 +78,7 @@ function isMapAlive(map: L.Map | null | undefined): map is L.Map {
 
 /**
  * Leaflet map locked to the selected district bounds (not the full world map).
+ * Location details are edited in the side panel — not as a map popup.
  * @see https://leafletjs.com/
  */
 export function LeafletDistrictMap({
@@ -89,28 +88,19 @@ export function LeafletDistrictMap({
   markers,
   selectedMarkerId,
   focusLatLng,
-  formValues,
-  categories,
-  saving,
   onMapClick,
   onMarkerSelect,
   onMarkerDrag,
-  onFormChange,
-  onFormSave,
-  onFormCancel,
 }: LeafletDistrictMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const markersLayerRef = useRef<L.LayerGroup | null>(null);
-  const popupRootRef = useRef<Root | null>(null);
-  const popupContainerRef = useRef<HTMLDivElement | null>(null);
-  const popupRef = useRef<L.Popup | null>(null);
   const disposedRef = useRef(false);
   const markerLayoutKeyRef = useRef("");
   const markerSelectionKeyRef = useRef("");
+  const lastFocusKeyRef = useRef("");
 
   const view = resolveDistrictView(districtCode, mapView);
-  // Stable key so iframe prop identity changes do not remount / refit the map.
   const viewKey = view
     ? [
         districtCode,
@@ -127,15 +117,11 @@ export function LeafletDistrictMap({
     focusLatLng?.latitude != null && focusLatLng?.longitude != null
       ? `${focusLatLng.latitude},${focusLatLng.longitude}`
       : "";
-  const lastFocusKeyRef = useRef("");
 
   const callbacksRef = useRef({
     onMapClick,
     onMarkerSelect,
     onMarkerDrag,
-    onFormChange,
-    onFormSave,
-    onFormCancel,
   });
 
   useEffect(() => {
@@ -143,9 +129,6 @@ export function LeafletDistrictMap({
       onMapClick,
       onMarkerSelect,
       onMarkerDrag,
-      onFormChange,
-      onFormSave,
-      onFormCancel,
     };
   });
 
@@ -202,9 +185,7 @@ export function LeafletDistrictMap({
     map.on("click", (event: L.LeafletMouseEvent) => {
       if (disposedRef.current) return;
       const target = event.originalEvent.target as HTMLElement | null;
-      if (target?.closest(".leaflet-marker-icon, .district-map-popup, .leaflet-popup")) {
-        return;
-      }
+      if (target?.closest(".leaflet-marker-icon")) return;
       if (!bounds.contains(event.latlng)) return;
       callbacksRef.current.onMapClick(
         Number(event.latlng.lat.toFixed(6)),
@@ -217,20 +198,9 @@ export function LeafletDistrictMap({
 
     return () => {
       disposedRef.current = true;
-      const root = popupRootRef.current;
-      const popup = popupRef.current;
-      try {
-        if (popup && isMapAlive(map)) {
-          map.closePopup(popup);
-        }
-      } catch {
-        // ignore
-      }
-      popupRootRef.current = null;
-      popupContainerRef.current = null;
-      popupRef.current = null;
       markerLayoutKeyRef.current = "";
       markerSelectionKeyRef.current = "";
+      lastFocusKeyRef.current = "";
       try {
         map.remove();
       } catch {
@@ -238,17 +208,7 @@ export function LeafletDistrictMap({
       }
       mapRef.current = null;
       markersLayerRef.current = null;
-      if (root) {
-        setTimeout(() => {
-          try {
-            root.unmount();
-          } catch {
-            // ignore
-          }
-        }, 0);
-      }
     };
-    // Remount only when district bounds config actually changes
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewKey]);
 
@@ -264,6 +224,7 @@ export function LeafletDistrictMap({
           marker.latitude,
           marker.longitude,
           marker.pointType,
+          marker.markerColor ?? "",
           marker.temporary ? 1 : 0,
         ].join(":"),
       )
@@ -291,7 +252,12 @@ export function LeafletDistrictMap({
           Boolean(marker.temporary && selectedMarkerId === "temporary");
 
         const leafletMarker = L.marker([marker.latitude, marker.longitude], {
-          icon: createPointIcon(marker.pointType, selected, marker.temporary),
+          icon: createPointIcon(
+            marker.pointType,
+            selected,
+            marker.temporary,
+            marker.markerColor,
+          ),
           draggable: true,
           title: marker.name ?? "Location",
           riseOnHover: true,
@@ -335,100 +301,11 @@ export function LeafletDistrictMap({
     if (!bounds.contains(target)) return;
 
     try {
-      // Pan only — never change zoom when focusing a pin / form field sync.
       map.panTo(target, { animate: false });
     } catch {
       // Ignore transient Leaflet errors.
     }
   }, [focusKey, view]);
-
-  useEffect(() => {
-    const map = mapRef.current;
-    if (disposedRef.current || !isMapAlive(map)) return;
-
-    if (
-      !formValues ||
-      formValues.latitude == null ||
-      formValues.longitude == null ||
-      !onFormChange ||
-      !onFormSave ||
-      !onFormCancel
-    ) {
-      try {
-        if (popupRef.current && map.hasLayer(popupRef.current)) {
-          map.closePopup(popupRef.current);
-        }
-      } catch {
-        // ignore
-      }
-      return;
-    }
-
-    if (!popupContainerRef.current) {
-      popupContainerRef.current = document.createElement("div");
-      popupContainerRef.current.className = "district-map-popup";
-      popupRootRef.current = createRoot(popupContainerRef.current);
-    }
-
-    popupRootRef.current?.render(
-      <MapPointPopup
-        values={formValues}
-        categories={categories}
-        mapWidth={1}
-        mapHeight={1}
-        calibrated
-        saving={saving}
-        onChange={(values) => callbacksRef.current.onFormChange?.(values)}
-        onSave={() => callbacksRef.current.onFormSave?.()}
-        onCancel={() => callbacksRef.current.onFormCancel?.()}
-        anchored={false}
-      />,
-    );
-
-    if (!popupRef.current) {
-      popupRef.current = L.popup({
-        maxWidth: 340,
-        minWidth: 300,
-        closeButton: false,
-        autoClose: false,
-        closeOnClick: false,
-        autoPan: false,
-        className: "district-leaflet-popup",
-        offset: [0, -12],
-      });
-    }
-
-    const popup = popupRef.current;
-    const nextLatLng = L.latLng(formValues.latitude, formValues.longitude);
-
-    try {
-      if (!map.hasLayer(popup)) {
-        popup.setLatLng(nextLatLng);
-        popup.setContent(popupContainerRef.current);
-        popup.openOn(map);
-        return;
-      }
-
-      const currentLatLng = popup.getLatLng();
-      const coordsChanged =
-        !currentLatLng ||
-        Math.abs(currentLatLng.lat - nextLatLng.lat) > 1e-9 ||
-        Math.abs(currentLatLng.lng - nextLatLng.lng) > 1e-9;
-
-      if (coordsChanged) {
-        popup.setLatLng(nextLatLng);
-      }
-    } catch {
-      // Ignore if popup/map was disposed during the update.
-    }
-  }, [
-    formValues,
-    categories,
-    saving,
-    onFormChange,
-    onFormSave,
-    onFormCancel,
-  ]);
 
   if (!view) {
     return (
@@ -439,7 +316,7 @@ export function LeafletDistrictMap({
   }
 
   return (
-    <div className="relative h-full w-full overflow-hidden bg-stone-100">
+    <div className="relative h-full w-full overflow-hidden rounded-lg border bg-stone-100">
       <div
         ref={containerRef}
         className="h-full min-h-[420px] w-full sm:min-h-[560px] lg:h-full lg:min-h-[640px]"

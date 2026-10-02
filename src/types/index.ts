@@ -46,6 +46,8 @@ export interface Location {
   address: string | null;
   description: string | null;
   pointType: PointType;
+  /** Hex colour used when pointType is CUSTOM (e.g. #22c55e). */
+  markerColor: string | null;
   status: EntityStatus;
   createdAt: string;
   updatedAt: string;
@@ -71,6 +73,7 @@ export interface MapMarkerData {
   address?: string | null;
   description?: string | null;
   pointType?: PointType;
+  markerColor?: string | null;
   status?: EntityStatus;
   temporary?: boolean;
 }

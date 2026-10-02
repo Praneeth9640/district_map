@@ -41,6 +41,7 @@ export interface StoredLocation {
   address: string | null;
   description: string | null;
   pointType: PointType;
+  markerColor: string | null;
   status: EntityStatus;
   createdAt: string;
   updatedAt: string;

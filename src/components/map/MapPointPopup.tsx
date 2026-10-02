@@ -14,7 +14,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { UNCALIBRATED_MESSAGE } from "@/lib/coordinates/coordinateMapper";
 import { cn } from "@/lib/utils";
-import type { Category, PointType } from "@/types";
+import type { Category } from "@/types";
 import type { LocationFormValues } from "@/components/locations/LocationForm";
 
 interface MapPointPopupProps {
@@ -27,7 +27,7 @@ interface MapPointPopupProps {
   /** When false, render as Leaflet popup content (no absolute map positioning). */
   anchored?: boolean;
   onChange: (values: LocationFormValues) => void;
-  onSave: () => void;
+  onSave: (values: LocationFormValues) => void;
   onCancel: () => void;
 }
 
@@ -69,6 +69,7 @@ export function MapPointPopup({
         prev.pixelX === values.pixelX &&
         prev.pixelY === values.pixelY &&
         prev.pointType === values.pointType &&
+        prev.markerColor === values.markerColor &&
         prev.categoryId === values.categoryId &&
         prev.status === values.status
       ) {
@@ -81,6 +82,7 @@ export function MapPointPopup({
         pixelX: values.pixelX,
         pixelY: values.pixelY,
         pointType: values.pointType,
+        markerColor: values.markerColor,
         categoryId: values.categoryId,
         status: values.status,
       };
@@ -119,8 +121,8 @@ export function MapPointPopup({
   return (
     <div
       className={cn(
-        "pointer-events-auto w-[300px] rounded-lg border border-stone-200 bg-white p-3 shadow-xl",
-        anchored && "absolute z-50 -translate-x-1/2",
+        "pointer-events-auto w-full max-w-none rounded-lg border border-stone-200 bg-white p-3 shadow-sm",
+        anchored && "absolute z-50 w-[300px] -translate-x-1/2 shadow-xl",
       )}
       style={
         anchored
@@ -149,8 +151,13 @@ export function MapPointPopup({
               ? "bg-sky-500"
               : draft.pointType === "RED"
                 ? "bg-red-500"
-                : "bg-amber-400",
+                : undefined,
           )}
+          style={
+            draft.pointType === "CUSTOM"
+              ? { backgroundColor: draft.markerColor || "#f59e0b" }
+              : undefined
+          }
         />
       </div>
 
@@ -187,6 +194,19 @@ export function MapPointPopup({
               ))}
             </SelectContent>
           </Select>
+        </div>
+
+        <div className="space-y-1">
+          <Label htmlFor="popup-address">Address</Label>
+          <Input
+            id="popup-address"
+            name="location-address"
+            value={draft.address}
+            onChange={(event) => update("address", event.target.value, { sync: false })}
+            onBlur={flushDraft}
+            placeholder="Optional address"
+            autoComplete="off"
+          />
         </div>
 
         <div className="space-y-1">
@@ -254,20 +274,115 @@ export function MapPointPopup({
         ) : null}
 
         <div className="space-y-1">
-          <Label>Point type</Label>
-          <Select
-            value={draft.pointType}
-            onValueChange={(value) => update("pointType", value as PointType)}
-          >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="BLUE">Blue (Tourism)</SelectItem>
-              <SelectItem value="RED">Red (Mandal HQ)</SelectItem>
-              <SelectItem value="CUSTOM">Custom</SelectItem>
-            </SelectContent>
-          </Select>
+          <Label>Point colour</Label>
+          <div className="grid grid-cols-3 gap-2">
+            {(
+              [
+                {
+                  value: "BLUE" as const,
+                  label: "Blue",
+                  hint: "Tourism",
+                  swatch: "bg-sky-500",
+                  ring: "ring-sky-500",
+                },
+                {
+                  value: "RED" as const,
+                  label: "Red",
+                  hint: "Mandal HQ",
+                  swatch: "bg-red-500",
+                  ring: "ring-red-500",
+                },
+                {
+                  value: "CUSTOM" as const,
+                  label: "Custom",
+                  hint: "Pick colour",
+                  swatch: "",
+                  ring: "ring-stone-400",
+                },
+              ] as const
+            ).map((option) => {
+              const selected = draft.pointType === option.value;
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => {
+                    const nextType = option.value;
+                    const next = {
+                      ...draftRef.current,
+                      pointType: nextType,
+                      markerColor:
+                        nextType === "CUSTOM"
+                          ? draftRef.current.markerColor || "#f59e0b"
+                          : "",
+                    };
+                    draftRef.current = next;
+                    setDraft(next);
+                    onChange(next);
+                  }}
+                  className={cn(
+                    "flex flex-col items-center gap-1.5 rounded-md border px-2 py-2 text-center transition",
+                    selected
+                      ? `border-stone-900 bg-stone-50 ring-2 ring-offset-1 ${option.ring}`
+                      : "border-stone-200 bg-white hover:border-stone-300",
+                  )}
+                  aria-pressed={selected}
+                >
+                  <span
+                    className={cn("h-5 w-5 rounded-full shadow-sm", option.swatch)}
+                    style={
+                      option.value === "CUSTOM"
+                        ? { backgroundColor: draft.markerColor || "#f59e0b" }
+                        : undefined
+                    }
+                  />
+                  <span className="text-xs font-medium text-stone-900">{option.label}</span>
+                  <span className="text-[10px] leading-tight text-muted-foreground">
+                    {option.hint}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {draft.pointType === "CUSTOM" ? (
+            <div className="mt-2 space-y-2 rounded-md border border-stone-200 bg-stone-50 p-2">
+              <p className="text-[11px] text-muted-foreground">Choose your pin colour</p>
+              <div className="flex flex-wrap gap-2">
+                {[
+                  "#f59e0b",
+                  "#22c55e",
+                  "#a855f7",
+                  "#ec4899",
+                  "#14b8a6",
+                  "#64748b",
+                  "#000000",
+                ].map((color) => (
+                  <button
+                    key={color}
+                    type="button"
+                    title={color}
+                    onClick={() => update("markerColor", color)}
+                    className={cn(
+                      "h-7 w-7 rounded-full border border-white shadow-sm ring-1 ring-stone-200",
+                      draft.markerColor === color && "ring-2 ring-stone-900 ring-offset-1",
+                    )}
+                    style={{ backgroundColor: color }}
+                  />
+                ))}
+                <label className="flex h-7 cursor-pointer items-center gap-1 rounded-md border border-dashed border-stone-300 bg-white px-2 text-[11px] text-stone-600">
+                  More
+                  <input
+                    type="color"
+                    value={draft.markerColor || "#f59e0b"}
+                    onChange={(event) => update("markerColor", event.target.value)}
+                    className="h-5 w-5 cursor-pointer border-0 bg-transparent p-0"
+                    aria-label="Pick custom colour"
+                  />
+                </label>
+              </div>
+            </div>
+          ) : null}
         </div>
 
         <div className="flex justify-end gap-2 pt-1">
@@ -278,8 +393,17 @@ export function MapPointPopup({
             type="button"
             size="sm"
             onClick={() => {
-              flushDraft();
-              onSave();
+              const latest = {
+                ...draftRef.current,
+                markerColor:
+                  draftRef.current.pointType === "CUSTOM"
+                    ? draftRef.current.markerColor?.trim() || "#f59e0b"
+                    : "",
+              };
+              draftRef.current = latest;
+              setDraft(latest);
+              onChange(latest);
+              onSave(latest);
             }}
             disabled={saving || !draft.name.trim() || !draft.categoryId}
           >

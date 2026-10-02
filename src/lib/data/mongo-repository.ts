@@ -298,6 +298,10 @@ export async function createLocation(input: LocationCreateInput) {
     address: input.address ?? null,
     description: input.description ?? null,
     pointType: input.pointType ?? "CUSTOM",
+    markerColor:
+      (input.pointType ?? "CUSTOM") === "CUSTOM"
+        ? (input.markerColor ?? "#f59e0b")
+        : null,
     status: input.status,
   });
 
@@ -335,6 +339,10 @@ export async function updateLocation(id: string, input: LocationUpdateInput) {
   if (input.address !== undefined) current.address = input.address;
   if (input.description !== undefined) current.description = input.description;
   if (input.pointType !== undefined) current.pointType = input.pointType;
+  if (input.markerColor !== undefined) current.markerColor = input.markerColor;
+  if (input.pointType === "RED" || input.pointType === "BLUE") {
+    current.markerColor = null;
+  }
   if (input.status !== undefined) current.status = input.status;
 
   if (current.pixelX < 0 || current.pixelY < 0) {

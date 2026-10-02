@@ -43,6 +43,7 @@ function withRelations(
   const category = categories.find((item) => item.id === location.categoryId);
   return {
     ...location,
+    markerColor: location.markerColor ?? null,
     district: district
       ? { id: district.id, name: district.name, code: district.code }
       : undefined,
@@ -345,6 +346,10 @@ export async function createLocation(input: LocationCreateInput) {
     address: input.address ?? null,
     description: input.description ?? null,
     pointType: input.pointType ?? "CUSTOM",
+    markerColor:
+      (input.pointType ?? "CUSTOM") === "CUSTOM"
+        ? (input.markerColor ?? "#f59e0b")
+        : null,
     status: input.status,
     createdAt: stamp,
     updatedAt: stamp,
@@ -389,6 +394,12 @@ export async function updateLocation(id: string, input: LocationUpdateInput) {
     address: input.address === undefined ? current.address : input.address,
     description: input.description === undefined ? current.description : input.description,
     pointType: input.pointType ?? current.pointType,
+    markerColor: (() => {
+      const nextType = input.pointType ?? current.pointType;
+      if (nextType === "RED" || nextType === "BLUE") return null;
+      if (input.markerColor !== undefined) return input.markerColor;
+      return current.markerColor ?? "#f59e0b";
+    })(),
     updatedAt: nowIso(),
   };
 

@@ -69,13 +69,13 @@ body {
 .dm-dot {
   display: block;
   box-sizing: border-box;
+  width: 16px;
+  height: 16px;
   border-radius: 9999px;
   box-shadow: 0 1px 3px rgb(0 0 0 / 35%);
 }
 
 .dm-dot-blue {
-  width: 16px;
-  height: 16px;
   background: #2563eb;
   border: 2px solid #1e3a8a;
 }
@@ -100,22 +100,27 @@ body {
 }
 
 .dm-dot-temp {
-  width: 16px;
-  height: 16px;
   background: #f59e0b;
   border: 2px solid #b45309;
 }
 
 .dm-dot-custom {
-  width: 14px;
-  height: 14px;
-  background: #78716c;
-  border: 2px solid #44403c;
+  background: var(--dm-color, #f59e0b);
+  border: 2px solid #ffffff;
+  box-shadow:
+    0 0 0 1px rgb(0 0 0 / 35%),
+    0 1px 3px rgb(0 0 0 / 35%);
 }
 
 .dm-dot.is-selected {
   transform: scale(1.25);
   box-shadow: 0 0 0 3px rgb(251 191 36 / 55%);
+}
+
+.dm-dot-custom.is-selected {
+  box-shadow:
+    0 0 0 1px rgb(0 0 0 / 35%),
+    0 0 0 3px rgb(251 191 36 / 55%);
 }
 
 .district-leaflet-popup .leaflet-popup-content-wrapper {

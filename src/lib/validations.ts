@@ -78,6 +78,12 @@ export const locationCreateSchema = z.object({
   address: z.string().trim().max(300).optional().nullable(),
   description: z.string().trim().max(2000).optional().nullable(),
   pointType: pointTypeSchema.default("CUSTOM"),
+  markerColor: z
+    .string()
+    .trim()
+    .regex(/^#([0-9a-fA-F]{6})$/, "Colour must be a hex value like #22c55e")
+    .optional()
+    .nullable(),
   status: entityStatusSchema.default("ACTIVE"),
 });
 

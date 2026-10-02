@@ -2,8 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
-import type { LocationFormValues } from "@/components/locations/LocationForm";
-import type { Category, MapMarkerData } from "@/types";
+import type { MapMarkerData } from "@/types";
 
 const LeafletDistrictMap = dynamic(
   () =>
@@ -27,9 +26,6 @@ type EmbedMapProps = {
   markers: MapMarkerData[];
   selectedMarkerId?: string | null;
   focusLatLng?: { latitude: number; longitude: number } | null;
-  formValues?: LocationFormValues | null;
-  categories: Category[];
-  saving?: boolean;
 };
 
 type ParentMessage =
@@ -75,9 +71,6 @@ export default function EmbedMapPage() {
         markers={props.markers}
         selectedMarkerId={props.selectedMarkerId}
         focusLatLng={props.focusLatLng}
-        formValues={props.formValues}
-        categories={props.categories}
-        saving={props.saving}
         onMapClick={(latitude, longitude) =>
           postToParent({ type: "district-map:click", latitude, longitude })
         }
@@ -92,11 +85,6 @@ export default function EmbedMapPage() {
             marker,
           })
         }
-        onFormChange={(values) =>
-          postToParent({ type: "district-map:form-change", values })
-        }
-        onFormSave={() => postToParent({ type: "district-map:form-save" })}
-        onFormCancel={() => postToParent({ type: "district-map:form-cancel" })}
       />
     </div>
   );

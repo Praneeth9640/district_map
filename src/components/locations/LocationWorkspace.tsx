@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { DistrictMap } from "@/components/map/DistrictMap";
+import { MapPointPopup } from "@/components/map/MapPointPopup";
 import { DistrictSelector } from "@/components/districts/DistrictSelector";
 import {
   locationToFormValues,
@@ -284,6 +285,10 @@ export function LocationWorkspace() {
       address: hotspot?.address ?? "",
       description: hotspot?.description ?? "",
       pointType: hotspot?.pointType ?? "CUSTOM",
+      markerColor:
+        hotspot?.pointType === "RED" || hotspot?.pointType === "BLUE"
+          ? ""
+          : "#f59e0b",
       status: "ACTIVE",
     });
   };
@@ -317,6 +322,7 @@ export function LocationWorkspace() {
       address: location.address,
       description: location.description,
       pointType: location.pointType,
+      markerColor: location.markerColor,
       status: location.status,
     }));
 
@@ -331,6 +337,7 @@ export function LocationWorkspace() {
         address: formValues.address,
         description: formValues.description,
         pointType: formValues.pointType,
+        markerColor: formValues.markerColor,
         status: formValues.status,
         temporary: true,
       });
@@ -347,6 +354,7 @@ export function LocationWorkspace() {
               longitude: formValues.longitude,
               name: formValues.name || marker.name,
               pointType: formValues.pointType,
+              markerColor: formValues.markerColor,
             }
           : marker,
       );
@@ -355,39 +363,46 @@ export function LocationWorkspace() {
     return saved;
   }, [locations, formValues, categories, searchPin]);
 
-  const saveLocation = async () => {
-    if (!formValues || !selectedDistrict) return;
-    if (!formValues.name.trim()) {
+  const saveLocation = async (valuesOverride?: LocationFormValues) => {
+    const current = valuesOverride ?? formValues;
+    if (!current || !selectedDistrict) return;
+    if (!current.name.trim()) {
       toast.error("Location name is required");
       return;
     }
-    if (!formValues.categoryId) {
+    if (!current.categoryId) {
       toast.error("Category is required");
       return;
     }
-    if (formValues.latitude == null || formValues.longitude == null) {
+    if (current.latitude == null || current.longitude == null) {
       toast.error("Latitude and longitude are required");
       return;
     }
+
+    const resolvedColor =
+      current.pointType === "CUSTOM"
+        ? current.markerColor?.trim() || "#f59e0b"
+        : null;
 
     setSaving(true);
     try {
       const payload = {
         districtId: selectedDistrict.id,
-        categoryId: formValues.categoryId,
-        name: formValues.name.trim(),
+        categoryId: current.categoryId,
+        name: current.name.trim(),
         pixelX: 0,
         pixelY: 0,
-        latitude: formValues.latitude,
-        longitude: formValues.longitude,
-        address: formValues.address.trim() || null,
-        description: formValues.description.trim() || null,
-        pointType: formValues.pointType,
-        status: formValues.status,
+        latitude: current.latitude,
+        longitude: current.longitude,
+        address: current.address.trim() || null,
+        description: current.description.trim() || null,
+        pointType: current.pointType,
+        markerColor: resolvedColor,
+        status: current.status,
       };
 
-      const saved = formValues.id
-        ? await fetchJson<Location>(`/api/locations/${formValues.id}`, {
+      const saved = current.id
+        ? await fetchJson<Location>(`/api/locations/${current.id}`, {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload),
@@ -398,9 +413,10 @@ export function LocationWorkspace() {
             body: JSON.stringify(payload),
           });
 
-      toast.success(formValues.id ? "Location updated" : "Location saved");
+      toast.success(current.id ? "Location updated" : "Location saved");
       setFormValues(null);
       setSelectedId(saved.id);
+      setSearchPin(null);
       if (saved.latitude != null && saved.longitude != null) {
         setFocusLatLng({ latitude: saved.latitude, longitude: saved.longitude });
       }
@@ -475,38 +491,56 @@ export function LocationWorkspace() {
         </div>
       ) : (
         <div className="space-y-4">
-          <DistrictMap
-            key={selectedDistrict.id}
-            districtCode={selectedDistrict.code}
-            districtName={selectedDistrict.name}
-            mapView={selectedDistrict.mapView}
-            markers={markers}
-            selectedMarkerId={selectedId}
-            focusLatLng={focusLatLng}
-            formValues={formValues}
-            categories={categories}
-            saving={saving}
-            onMapClick={handleMapClick}
-            onMarkerSelect={(marker) => {
-              if (marker.id) {
-                const location = locations.find((item) => item.id === marker.id);
-                if (location) {
-                  openFormAt(locationToFormValues(location));
-                  return;
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
+            <DistrictMap
+              key={selectedDistrict.id}
+              districtCode={selectedDistrict.code}
+              districtName={selectedDistrict.name}
+              mapView={selectedDistrict.mapView}
+              markers={markers}
+              selectedMarkerId={selectedId}
+              focusLatLng={focusLatLng}
+              categories={categories}
+              onMapClick={handleMapClick}
+              onMarkerSelect={(marker) => {
+                if (marker.id) {
+                  const location = locations.find((item) => item.id === marker.id);
+                  if (location) {
+                    openFormAt(locationToFormValues(location));
+                    return;
+                  }
                 }
-              }
-              if (formValues) {
-                setSelectedId(marker.id ?? "temporary");
-              }
-            }}
-            onMarkerDrag={handleMarkerDrag}
-            onFormChange={setFormValues}
-            onFormSave={() => void saveLocation()}
-            onFormCancel={() => {
-              setFormValues(null);
-              setSelectedId(null);
-            }}
-          />
+                if (formValues) {
+                  setSelectedId(marker.id ?? "temporary");
+                }
+              }}
+              onMarkerDrag={handleMarkerDrag}
+            />
+
+            <aside className="lg:sticky lg:top-4">
+              {formValues ? (
+                <MapPointPopup
+                  values={formValues}
+                  categories={categories}
+                  mapWidth={1}
+                  mapHeight={1}
+                  calibrated
+                  saving={saving}
+                  anchored={false}
+                  onChange={setFormValues}
+                  onSave={(values) => void saveLocation(values)}
+                  onCancel={() => {
+                    setFormValues(null);
+                    setSelectedId(null);
+                  }}
+                />
+              ) : (
+                <div className="rounded-lg border border-dashed bg-white p-4 text-sm text-muted-foreground">
+                  Click the map or a red/blue point to edit location details here.
+                </div>
+              )}
+            </aside>
+          </div>
           <LocationDetails location={details} />
         </div>
       )}

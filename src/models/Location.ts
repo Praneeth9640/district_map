@@ -1,4 +1,4 @@
-import mongoose, { Schema, models, model, type Model, type Types } from "mongoose";
+import mongoose, { Schema, model, type Model, type Types } from "mongoose";
 import { ENTITY_STATUSES, type EntityStatus } from "@/models/District";
 
 export const POINT_TYPES = ["RED", "BLUE", "CUSTOM"] as const;
@@ -15,8 +15,10 @@ export interface LocationDocument {
   longitude: number | null;
   address: string | null;
   description: string | null;
-  /** RED = mandal HQ style, BLUE = tourism style, CUSTOM = user pin */
+  /** RED = mandal HQ style, BLUE = tourism style, CUSTOM = user-chosen colour */
   pointType: PointType;
+  /** Hex colour for CUSTOM pins */
+  markerColor: string | null;
   status: EntityStatus;
   createdAt: Date;
   updatedAt: Date;
@@ -49,6 +51,7 @@ const LocationSchema = new Schema<LocationDocument>(
       default: "CUSTOM",
       index: true,
     },
+    markerColor: { type: String, default: null, trim: true },
     status: {
       type: String,
       enum: ENTITY_STATUSES,
@@ -62,9 +65,15 @@ LocationSchema.index({ status: 1 });
 LocationSchema.index({ name: 1 });
 LocationSchema.index({ districtId: 1, name: 1 });
 
-export const Location: Model<LocationDocument> =
-  (models.Location as Model<LocationDocument>) ||
-  model<LocationDocument>("Location", LocationSchema);
+// Next.js HMR can keep an old compiled model that strips new fields like markerColor.
+if (mongoose.models.Location) {
+  delete mongoose.models.Location;
+}
+
+export const Location: Model<LocationDocument> = model<LocationDocument>(
+  "Location",
+  LocationSchema,
+);
 
 export type { Types };
 export { mongoose };
