@@ -72,6 +72,7 @@ function buildSeedDatabase(): LocalDatabase {
       address: hotspot.address ?? null,
       description: hotspot.description ?? null,
       pointType: hotspot.pointType,
+      markerColor: null,
       status: "ACTIVE",
       createdAt: stamp,
       updatedAt: stamp,

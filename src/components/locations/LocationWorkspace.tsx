@@ -500,7 +500,6 @@ export function LocationWorkspace() {
               markers={markers}
               selectedMarkerId={selectedId}
               focusLatLng={focusLatLng}
-              categories={categories}
               onMapClick={handleMapClick}
               onMarkerSelect={(marker) => {
                 if (marker.id) {

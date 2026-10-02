@@ -9,7 +9,6 @@ describe("DistrictMap (iframe wrapper)", () => {
         districtCode="ASR"
         districtName="Alluri Sitharama Raju"
         markers={[]}
-        categories={[]}
         onMapClick={vi.fn()}
         onMarkerSelect={vi.fn()}
         onMarkerDrag={vi.fn()}
