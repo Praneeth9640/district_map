@@ -231,7 +231,12 @@ export function LocationWorkspace() {
   }, [search, selectedDistrict, locations]);
 
   const openFormAt = useCallback((values: LocationFormValues) => {
-    setFormValues(values);
+    setFormValues({
+      ...values,
+      sessionKey:
+        values.sessionKey ??
+        `pin-${values.id ?? "new"}-${values.latitude}-${values.longitude}-${Date.now()}`,
+    });
     setSelectedId(values.id ?? "temporary");
     if (values.latitude != null && values.longitude != null) {
       setFocusLatLng({ latitude: values.latitude, longitude: values.longitude });
@@ -294,6 +299,8 @@ export function LocationWorkspace() {
         ...formValues,
         latitude,
         longitude,
+        // Keep the same session so the popup does not remount while dragging
+        sessionKey: formValues.sessionKey,
       });
     }
   };

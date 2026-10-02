@@ -17,6 +17,8 @@ import type { Category, EntityStatus, Location, PointType } from "@/types";
 
 export interface LocationFormValues {
   id?: string;
+  /** Bumps whenever a new pin/edit session is opened (keeps popup typing stable). */
+  sessionKey?: string;
   districtId: string;
   categoryId: string;
   name: string;
@@ -227,6 +229,7 @@ export function LocationForm({
 export function locationToFormValues(location: Location): LocationFormValues {
   return {
     id: location.id,
+    sessionKey: `edit-${location.id}`,
     districtId: location.districtId,
     categoryId: location.categoryId,
     name: location.name,

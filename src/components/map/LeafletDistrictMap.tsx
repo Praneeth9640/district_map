@@ -68,6 +68,16 @@ function createPointIcon(
   });
 }
 
+function isMapAlive(map: L.Map | null | undefined): map is L.Map {
+  if (!map) return false;
+  try {
+    const container = map.getContainer();
+    return Boolean(container?.isConnected && (map as L.Map & { _loaded?: boolean })._loaded);
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Leaflet map locked to the selected district bounds (not the full world map).
  * @see https://leafletjs.com/
@@ -95,8 +105,29 @@ export function LeafletDistrictMap({
   const popupRootRef = useRef<Root | null>(null);
   const popupContainerRef = useRef<HTMLDivElement | null>(null);
   const popupRef = useRef<L.Popup | null>(null);
+  const disposedRef = useRef(false);
+  const markerLayoutKeyRef = useRef("");
+  const markerSelectionKeyRef = useRef("");
 
   const view = resolveDistrictView(districtCode, mapView);
+  // Stable key so iframe prop identity changes do not remount / refit the map.
+  const viewKey = view
+    ? [
+        districtCode,
+        view.centerLat,
+        view.centerLng,
+        view.zoom,
+        view.minZoom,
+        view.maxZoom,
+        view.bounds[0]?.join(","),
+        view.bounds[1]?.join(","),
+      ].join("|")
+    : "";
+  const focusKey =
+    focusLatLng?.latitude != null && focusLatLng?.longitude != null
+      ? `${focusLatLng.latitude},${focusLatLng.longitude}`
+      : "";
+  const lastFocusKeyRef = useRef("");
 
   const callbacksRef = useRef({
     onMapClick,
@@ -121,11 +152,15 @@ export function LeafletDistrictMap({
   useEffect(() => {
     if (!containerRef.current || mapRef.current || !view) return;
 
+    disposedRef.current = false;
     const bounds = L.latLngBounds(view.bounds[0], view.bounds[1]);
 
     const map = L.map(containerRef.current, {
+      center: [view.centerLat, view.centerLng],
+      zoom: view.zoom,
       zoomControl: false,
       attributionControl: false,
+      keyboard: false,
       minZoom: view.minZoom,
       maxZoom: view.maxZoom,
       maxBounds: bounds.pad(0.02),
@@ -133,25 +168,39 @@ export function LeafletDistrictMap({
     });
 
     L.control.zoom({ position: "topright" }).addTo(map);
-    map.fitBounds(bounds, { padding: [12, 12], maxZoom: view.zoom });
 
     L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
       maxZoom: view.maxZoom,
       bounds,
-    }).addTo(map);
-
-    // Soft district frame so the view reads as “this district only”
-    L.rectangle(bounds, {
-      color: "#57534e",
-      weight: 1.5,
-      dashArray: "6 4",
-      fill: false,
-      interactive: false,
+      noWrap: true,
     }).addTo(map);
 
     const markersLayer = L.layerGroup().addTo(map);
 
+    const fitWhenReady = () => {
+      if (disposedRef.current || !isMapAlive(map)) return;
+      try {
+        map.invalidateSize({ animate: false });
+        const size = map.getSize();
+        if (!size.x || !size.y) {
+          window.setTimeout(fitWhenReady, 50);
+          return;
+        }
+        map.fitBounds(bounds, {
+          padding: [12, 12],
+          maxZoom: view.zoom,
+          animate: false,
+        });
+      } catch {
+        // Ignore transient Leaflet layout errors while the iframe settles.
+      }
+    };
+
+    map.whenReady(fitWhenReady);
+    window.setTimeout(fitWhenReady, 0);
+
     map.on("click", (event: L.LeafletMouseEvent) => {
+      if (disposedRef.current) return;
       const target = event.originalEvent.target as HTMLElement | null;
       if (target?.closest(".leaflet-marker-icon, .district-map-popup, .leaflet-popup")) {
         return;
@@ -167,80 +216,135 @@ export function LeafletDistrictMap({
     markersLayerRef.current = markersLayer;
 
     return () => {
+      disposedRef.current = true;
       const root = popupRootRef.current;
       const popup = popupRef.current;
-      if (popup) {
-        map.closePopup(popup);
+      try {
+        if (popup && isMapAlive(map)) {
+          map.closePopup(popup);
+        }
+      } catch {
+        // ignore
       }
       popupRootRef.current = null;
       popupContainerRef.current = null;
       popupRef.current = null;
-      map.remove();
+      markerLayoutKeyRef.current = "";
+      markerSelectionKeyRef.current = "";
+      try {
+        map.remove();
+      } catch {
+        // ignore
+      }
       mapRef.current = null;
       markersLayerRef.current = null;
-      // Defer unmount — React forbids sync unmount while a render is in progress.
       if (root) {
         setTimeout(() => {
-          root.unmount();
+          try {
+            root.unmount();
+          } catch {
+            // ignore
+          }
         }, 0);
       }
     };
-    // Remounted by parent key when district changes
+    // Remount only when district bounds config actually changes
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view]);
+  }, [viewKey]);
 
   useEffect(() => {
     const map = mapRef.current;
     const layer = markersLayerRef.current;
-    if (!map || !layer) return;
+    if (disposedRef.current || !isMapAlive(map) || !layer) return;
 
-    layer.clearLayers();
+    const layoutKey = markers
+      .map((marker) =>
+        [
+          marker.id ?? "tmp",
+          marker.latitude,
+          marker.longitude,
+          marker.pointType,
+          marker.temporary ? 1 : 0,
+        ].join(":"),
+      )
+      .join("|");
+    const selectionKey = String(selectedMarkerId ?? "");
 
-    markers.forEach((marker) => {
-      if (marker.latitude == null || marker.longitude == null) return;
+    if (
+      markerLayoutKeyRef.current === layoutKey &&
+      markerSelectionKeyRef.current === selectionKey
+    ) {
+      return;
+    }
 
-      const selected =
-        selectedMarkerId === marker.id ||
-        Boolean(marker.temporary && selectedMarkerId === "temporary");
+    markerLayoutKeyRef.current = layoutKey;
+    markerSelectionKeyRef.current = selectionKey;
 
-      const leafletMarker = L.marker([marker.latitude, marker.longitude], {
-        icon: createPointIcon(marker.pointType, selected, marker.temporary),
-        draggable: true,
-        title: marker.name ?? "Location",
-        riseOnHover: true,
+    try {
+      layer.clearLayers();
+
+      markers.forEach((marker) => {
+        if (marker.latitude == null || marker.longitude == null) return;
+
+        const selected =
+          selectedMarkerId === marker.id ||
+          Boolean(marker.temporary && selectedMarkerId === "temporary");
+
+        const leafletMarker = L.marker([marker.latitude, marker.longitude], {
+          icon: createPointIcon(marker.pointType, selected, marker.temporary),
+          draggable: true,
+          title: marker.name ?? "Location",
+          riseOnHover: true,
+        });
+
+        leafletMarker.on("click", (event) => {
+          L.DomEvent.stopPropagation(event);
+          callbacksRef.current.onMarkerSelect(marker);
+        });
+
+        leafletMarker.on("drag", (event) => {
+          if (disposedRef.current) return;
+          const latlng = (event.target as L.Marker).getLatLng();
+          callbacksRef.current.onMarkerDrag(
+            Number(latlng.lat.toFixed(6)),
+            Number(latlng.lng.toFixed(6)),
+            marker,
+          );
+        });
+
+        leafletMarker.addTo(layer);
       });
-
-      leafletMarker.on("click", (event) => {
-        L.DomEvent.stopPropagation(event);
-        callbacksRef.current.onMarkerSelect(marker);
-      });
-
-      leafletMarker.on("drag", (event) => {
-        const latlng = (event.target as L.Marker).getLatLng();
-        callbacksRef.current.onMarkerDrag(
-          Number(latlng.lat.toFixed(6)),
-          Number(latlng.lng.toFixed(6)),
-          marker,
-        );
-      });
-
-      leafletMarker.addTo(layer);
-    });
+    } catch {
+      // Ignore if map was torn down mid-update.
+    }
   }, [markers, selectedMarkerId]);
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !focusLatLng || !view) return;
-    if (focusLatLng.latitude == null || focusLatLng.longitude == null) return;
+    if (disposedRef.current || !isMapAlive(map) || !focusKey || !view) return;
+    if (focusKey === lastFocusKeyRef.current) return;
+    lastFocusKeyRef.current = focusKey;
+
+    const [latText, lngText] = focusKey.split(",");
+    const latitude = Number(latText);
+    const longitude = Number(lngText);
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return;
+
     const bounds = L.latLngBounds(view.bounds[0], view.bounds[1]);
-    const target = L.latLng(focusLatLng.latitude, focusLatLng.longitude);
+    const target = L.latLng(latitude, longitude);
     if (!bounds.contains(target)) return;
-    map.setView(target, Math.max(map.getZoom(), 13), { animate: true });
-  }, [focusLatLng, view]);
+
+    try {
+      // Pan only — never change zoom when focusing a pin / form field sync.
+      map.panTo(target, { animate: false });
+    } catch {
+      // Ignore transient Leaflet errors.
+    }
+  }, [focusKey, view]);
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map) return;
+    if (disposedRef.current || !isMapAlive(map)) return;
 
     if (
       !formValues ||
@@ -250,7 +354,13 @@ export function LeafletDistrictMap({
       !onFormSave ||
       !onFormCancel
     ) {
-      if (popupRef.current) map.closePopup(popupRef.current);
+      try {
+        if (popupRef.current && map.hasLayer(popupRef.current)) {
+          map.closePopup(popupRef.current);
+        }
+      } catch {
+        // ignore
+      }
       return;
     }
 
@@ -277,22 +387,39 @@ export function LeafletDistrictMap({
 
     if (!popupRef.current) {
       popupRef.current = L.popup({
-        maxWidth: 320,
-        minWidth: 280,
+        maxWidth: 340,
+        minWidth: 300,
         closeButton: false,
         autoClose: false,
         closeOnClick: false,
+        autoPan: false,
         className: "district-leaflet-popup",
         offset: [0, -12],
       });
     }
 
-    popupRef.current
-      .setLatLng([formValues.latitude, formValues.longitude])
-      .setContent(popupContainerRef.current);
+    const popup = popupRef.current;
+    const nextLatLng = L.latLng(formValues.latitude, formValues.longitude);
 
-    if (!map.hasLayer(popupRef.current)) {
-      popupRef.current.openOn(map);
+    try {
+      if (!map.hasLayer(popup)) {
+        popup.setLatLng(nextLatLng);
+        popup.setContent(popupContainerRef.current);
+        popup.openOn(map);
+        return;
+      }
+
+      const currentLatLng = popup.getLatLng();
+      const coordsChanged =
+        !currentLatLng ||
+        Math.abs(currentLatLng.lat - nextLatLng.lat) > 1e-9 ||
+        Math.abs(currentLatLng.lng - nextLatLng.lng) > 1e-9;
+
+      if (coordsChanged) {
+        popup.setLatLng(nextLatLng);
+      }
+    } catch {
+      // Ignore if popup/map was disposed during the update.
     }
   }, [
     formValues,

@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -10,6 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { UNCALIBRATED_MESSAGE } from "@/lib/coordinates/coordinateMapper";
 import { cn } from "@/lib/utils";
 import type { Category, PointType } from "@/types";
@@ -29,6 +31,10 @@ interface MapPointPopupProps {
   onCancel: () => void;
 }
 
+function pointSessionKey(values: LocationFormValues) {
+  return values.sessionKey ?? values.id ?? "temporary";
+}
+
 export function MapPointPopup({
   values,
   categories,
@@ -41,29 +47,79 @@ export function MapPointPopup({
   onSave,
   onCancel,
 }: MapPointPopupProps) {
-  const leftPercent = (values.pixelX / mapWidth) * 100;
-  const topPercent = (values.pixelY / mapHeight) * 100;
+  // Keep typing local so parent/iframe re-renders do not remount the inputs mid-keystroke.
+  const [draft, setDraft] = useState<LocationFormValues>(values);
+  const sessionKeyRef = useRef(pointSessionKey(values));
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
 
-  // Keep the popup inside the map bounds.
+  useEffect(() => {
+    const nextKey = pointSessionKey(values);
+    if (sessionKeyRef.current !== nextKey) {
+      sessionKeyRef.current = nextKey;
+      setDraft(values);
+      return;
+    }
+
+    // Same point: accept map drag / external coordinate updates only.
+    setDraft((prev) => {
+      if (
+        prev.latitude === values.latitude &&
+        prev.longitude === values.longitude &&
+        prev.pixelX === values.pixelX &&
+        prev.pixelY === values.pixelY &&
+        prev.pointType === values.pointType &&
+        prev.categoryId === values.categoryId &&
+        prev.status === values.status
+      ) {
+        return prev;
+      }
+      return {
+        ...prev,
+        latitude: values.latitude,
+        longitude: values.longitude,
+        pixelX: values.pixelX,
+        pixelY: values.pixelY,
+        pointType: values.pointType,
+        categoryId: values.categoryId,
+        status: values.status,
+      };
+    });
+  }, [values]);
+
+  const leftPercent = (draft.pixelX / mapWidth) * 100;
+  const topPercent = (draft.pixelY / mapHeight) * 100;
   const anchoredLeft = Math.min(Math.max(leftPercent, 18), 82);
   const anchoredTop = Math.min(Math.max(topPercent, 8), 62);
 
   const update = <K extends keyof LocationFormValues>(
     key: K,
     value: LocationFormValues[K],
-  ) => onChange({ ...values, [key]: value });
+    options?: { sync?: boolean },
+  ) => {
+    const next = { ...draftRef.current, [key]: value };
+    draftRef.current = next;
+    setDraft(next);
+    // Text fields sync on blur/save so iframe/parent re-renders do not steal focus.
+    if (options?.sync === false) return;
+    onChange(next);
+  };
+
+  const flushDraft = () => {
+    onChange(draftRef.current);
+  };
 
   const pointLabel =
-    values.pointType === "BLUE"
+    draft.pointType === "BLUE"
       ? "Blue tourism point"
-      : values.pointType === "RED"
+      : draft.pointType === "RED"
         ? "Red mandal point"
         : "Custom point";
 
   return (
     <div
       className={cn(
-        "pointer-events-auto w-[280px] rounded-lg border border-stone-200 bg-white p-3 shadow-xl",
+        "pointer-events-auto w-[300px] rounded-lg border border-stone-200 bg-white p-3 shadow-xl",
         anchored && "absolute z-50 -translate-x-1/2",
       )}
       style={
@@ -77,20 +133,21 @@ export function MapPointPopup({
       data-map-popup
       onPointerDown={(event) => event.stopPropagation()}
       onClick={(event) => event.stopPropagation()}
+      onKeyDown={(event) => event.stopPropagation()}
     >
       <div className="mb-2 flex items-center justify-between gap-2">
         <div>
           <p className="text-sm font-semibold text-stone-900">
-            {values.id ? "Edit location" : "Location details"}
+            {draft.id ? "Edit location" : "Location details"}
           </p>
           <p className="text-xs text-muted-foreground">{pointLabel}</p>
         </div>
         <span
           className={cn(
             "h-3 w-3 rounded-full",
-            values.pointType === "BLUE"
+            draft.pointType === "BLUE"
               ? "bg-sky-500"
-              : values.pointType === "RED"
+              : draft.pointType === "RED"
                 ? "bg-red-500"
                 : "bg-amber-400",
           )}
@@ -102,16 +159,21 @@ export function MapPointPopup({
           <Label htmlFor="popup-name">Location Name</Label>
           <Input
             id="popup-name"
-            value={values.name}
-            onChange={(event) => update("name", event.target.value)}
+            name="location-name"
+            value={draft.name}
+            onChange={(event) => update("name", event.target.value, { sync: false })}
+            onBlur={flushDraft}
             placeholder="Enter name"
+            autoComplete="off"
+            autoCorrect="off"
+            spellCheck={false}
           />
         </div>
 
         <div className="space-y-1">
           <Label>Category</Label>
           <Select
-            value={values.categoryId || undefined}
+            value={draft.categoryId || undefined}
             onValueChange={(value) => update("categoryId", value)}
           >
             <SelectTrigger>
@@ -127,14 +189,34 @@ export function MapPointPopup({
           </Select>
         </div>
 
+        <div className="space-y-1">
+          <Label htmlFor="popup-description">Description</Label>
+          <Textarea
+            id="popup-description"
+            name="location-description"
+            value={draft.description}
+            onChange={(event) =>
+              update("description", event.target.value, { sync: false })
+            }
+            onBlur={flushDraft}
+            placeholder="Optional description"
+            autoComplete="off"
+            rows={2}
+            className="min-h-[64px] resize-none"
+          />
+        </div>
+
         <div className="grid grid-cols-2 gap-2">
           <div className="space-y-1">
             <Label>Latitude</Label>
             <Input
-              value={values.latitude ?? ""}
+              name="location-latitude"
+              value={draft.latitude ?? ""}
               readOnly={!calibrated}
               className={!calibrated ? "bg-stone-50" : undefined}
               placeholder="18.xxxxxx"
+              autoComplete="off"
+              inputMode="decimal"
               onChange={(event) => {
                 if (!calibrated) return;
                 update(
@@ -147,10 +229,13 @@ export function MapPointPopup({
           <div className="space-y-1">
             <Label>Longitude</Label>
             <Input
-              value={values.longitude ?? ""}
+              name="location-longitude"
+              value={draft.longitude ?? ""}
               readOnly={!calibrated}
               className={!calibrated ? "bg-stone-50" : undefined}
               placeholder="82.xxxxxx"
+              autoComplete="off"
+              inputMode="decimal"
               onChange={(event) => {
                 if (!calibrated) return;
                 update(
@@ -171,7 +256,7 @@ export function MapPointPopup({
         <div className="space-y-1">
           <Label>Point type</Label>
           <Select
-            value={values.pointType}
+            value={draft.pointType}
             onValueChange={(value) => update("pointType", value as PointType)}
           >
             <SelectTrigger>
@@ -192,8 +277,11 @@ export function MapPointPopup({
           <Button
             type="button"
             size="sm"
-            onClick={onSave}
-            disabled={saving || !values.name.trim() || !values.categoryId}
+            onClick={() => {
+              flushDraft();
+              onSave();
+            }}
+            disabled={saving || !draft.name.trim() || !draft.categoryId}
           >
             {saving ? "Saving..." : "Save"}
           </Button>
