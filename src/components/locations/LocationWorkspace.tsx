@@ -73,6 +73,7 @@ export function LocationWorkspace() {
   const [focusLatLng, setFocusLatLng] = useState<{
     latitude: number;
     longitude: number;
+    zoom?: number;
   } | null>(null);
   const [search, setSearch] = useState("");
   const [searchPin, setSearchPin] = useState<MapMarkerData | null>(null);
@@ -180,6 +181,7 @@ export function LocationWorkspace() {
             setFocusLatLng({
               latitude: localMatch.latitude,
               longitude: localMatch.longitude,
+              zoom: 14,
             });
             setSelectedId(localMatch.id);
             setSearchPin(null);
@@ -210,7 +212,11 @@ export function LocationWorkspace() {
             return;
           }
 
-          setFocusLatLng({ latitude: hit.latitude, longitude: hit.longitude });
+          setFocusLatLng({
+            latitude: hit.latitude,
+            longitude: hit.longitude,
+            zoom: 14,
+          });
           setSearchPin({
             id: "search-result",
             pixelX: 0,

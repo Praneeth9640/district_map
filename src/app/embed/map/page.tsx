@@ -25,7 +25,7 @@ type EmbedMapProps = {
   mapView?: import("@/lib/maps/types").DistrictMapView | null;
   markers: MapMarkerData[];
   selectedMarkerId?: string | null;
-  focusLatLng?: { latitude: number; longitude: number } | null;
+  focusLatLng?: { latitude: number; longitude: number; zoom?: number } | null;
 };
 
 type ParentMessage =

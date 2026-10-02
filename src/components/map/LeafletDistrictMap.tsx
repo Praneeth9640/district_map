@@ -7,13 +7,20 @@ import { resolveDistrictView } from "@/lib/maps/districtViews";
 import type { DistrictMapView } from "@/lib/maps/types";
 import type { MapMarkerData, PointType } from "@/types";
 
+export interface MapFocusTarget {
+  latitude: number;
+  longitude: number;
+  /** When set, map zooms to this level (e.g. place search). */
+  zoom?: number;
+}
+
 export interface LeafletDistrictMapProps {
   districtCode: string;
   districtName: string;
   mapView?: DistrictMapView | null;
   markers: MapMarkerData[];
   selectedMarkerId?: string | null;
-  focusLatLng?: { latitude: number; longitude: number } | null;
+  focusLatLng?: MapFocusTarget | null;
   onMapClick: (latitude: number, longitude: number) => void;
   onMarkerSelect: (marker: MapMarkerData) => void;
   onMarkerDrag: (latitude: number, longitude: number, marker: MapMarkerData) => void;
@@ -115,7 +122,7 @@ export function LeafletDistrictMap({
     : "";
   const focusKey =
     focusLatLng?.latitude != null && focusLatLng?.longitude != null
-      ? `${focusLatLng.latitude},${focusLatLng.longitude}`
+      ? `${focusLatLng.latitude},${focusLatLng.longitude},${focusLatLng.zoom ?? ""}`
       : "";
 
   const callbacksRef = useRef({
@@ -291,17 +298,27 @@ export function LeafletDistrictMap({
     if (focusKey === lastFocusKeyRef.current) return;
     lastFocusKeyRef.current = focusKey;
 
-    const [latText, lngText] = focusKey.split(",");
+    const [latText, lngText, zoomText] = focusKey.split(",");
     const latitude = Number(latText);
     const longitude = Number(lngText);
     if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return;
 
-    const bounds = L.latLngBounds(view.bounds[0], view.bounds[1]);
+    // Allow slight overflow so edge towns (e.g. Rampachodavaram) still focus.
+    const bounds = L.latLngBounds(view.bounds[0], view.bounds[1]).pad(0.1);
     const target = L.latLng(latitude, longitude);
     if (!bounds.contains(target)) return;
 
+    const focusZoom = zoomText ? Number(zoomText) : NaN;
+    const zoom = Number.isFinite(focusZoom)
+      ? Math.min(view.maxZoom, Math.max(view.minZoom, focusZoom))
+      : null;
+
     try {
-      map.panTo(target, { animate: false });
+      if (zoom != null) {
+        map.setView(target, zoom, { animate: false });
+      } else {
+        map.panTo(target, { animate: false });
+      }
     } catch {
       // Ignore transient Leaflet errors.
     }

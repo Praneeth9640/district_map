@@ -43,8 +43,25 @@ export function searchHotspots(
     }));
 }
 
+/** Degrees to expand Nominatim viewbox so towns on the district edge still match. */
+const SEARCH_BOUNDS_PAD = 0.25;
+
+function distanceToBounds(
+  lat: number,
+  lng: number,
+  south: number,
+  west: number,
+  north: number,
+  east: number,
+) {
+  const clampedLat = Math.min(Math.max(lat, south), north);
+  const clampedLng = Math.min(Math.max(lng, west), east);
+  return Math.hypot(lat - clampedLat, lng - clampedLng);
+}
+
 /**
- * Search OpenStreetMap Nominatim inside the district view bounds.
+ * Search OpenStreetMap Nominatim near the district view bounds.
+ * Case-insensitive; pads the viewbox so edge towns (e.g. Rampachodavaram) are included.
  * @see https://nominatim.org/release-docs/develop/api/Search/
  */
 export async function searchGeocodeInDistrict(
@@ -59,12 +76,16 @@ export async function searchGeocodeInDistrict(
   if (!view) return [];
 
   const [[south, west], [north, east]] = view.bounds;
-  const viewbox = `${west},${north},${east},${south}`;
+  const paddedSouth = south - SEARCH_BOUNDS_PAD;
+  const paddedWest = west - SEARCH_BOUNDS_PAD;
+  const paddedNorth = north + SEARCH_BOUNDS_PAD;
+  const paddedEast = east + SEARCH_BOUNDS_PAD;
+  const viewbox = `${paddedWest},${paddedNorth},${paddedEast},${paddedSouth}`;
 
   const url = new URL("https://nominatim.openstreetmap.org/search");
   url.searchParams.set("q", q);
   url.searchParams.set("format", "json");
-  url.searchParams.set("limit", "5");
+  url.searchParams.set("limit", "8");
   url.searchParams.set("viewbox", viewbox);
   url.searchParams.set("bounded", "1");
   url.searchParams.set("addressdetails", "0");
@@ -88,13 +109,30 @@ export async function searchGeocodeInDistrict(
     display_name: string;
   }>;
 
-  return rows.map((row) => ({
-    name: row.name || row.display_name.split(",")[0] || q,
-    latitude: Number(row.lat),
-    longitude: Number(row.lon),
-    source: "geocode" as const,
-    displayName: row.display_name,
-  }));
+  const ranked = rows.map((row) => {
+    const latitude = Number(row.lat);
+    const longitude = Number(row.lon);
+    const name = row.name || row.display_name.split(",")[0] || q;
+    return {
+      result: {
+        name,
+        latitude,
+        longitude,
+        source: "geocode" as const,
+        displayName: row.display_name,
+      } satisfies PlaceSearchResult,
+      nameMatch:
+        matchesQuery(name, q) || matchesQuery(row.display_name, q),
+      dist: distanceToBounds(latitude, longitude, south, west, north, east),
+    };
+  });
+
+  ranked.sort((a, b) => {
+    if (a.nameMatch !== b.nameMatch) return a.nameMatch ? -1 : 1;
+    return a.dist - b.dist;
+  });
+
+  return ranked.map((item) => item.result);
 }
 
 export async function searchPlaces(
